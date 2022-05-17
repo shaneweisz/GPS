@@ -12,7 +12,7 @@ from tqdm import tqdm
 from utility.VAE_Text_Generation.dataset import get_iterators
 from utility.VAE_Text_Generation.helper_functions import get_cuda
 from utility.VAE_Text_Generation.model import VAE
-
+import wandb
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, default=8)
@@ -41,6 +41,8 @@ parser.add_argument('--resume_training', action='store_true')
 
 opt = parser.parse_args()
 print(opt)
+wandb.init(project="gps-vae-conan", entity="shaneweisz", config=opt)
+
 save_path = "tmp/saved_VAE_models/" + opt.dataset + ".tar"
 print(save_path)
 if not os.path.exists("tmp/saved_VAE_models"):
@@ -50,6 +52,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = str(opt.gpu)
 candidates_path = opt.dataset + '_for_VAE.txt'
 train_iter, val_iter, vocab = get_iterators(opt, path='./data/', fname=candidates_path)
 opt.n_vocab = len(vocab)
+
 if opt.training:
     vae = VAE(opt)
     vae.embedding.weight.data.copy_(vocab.vectors)              #Intialize trainable embeddings with pretrained glove vectors
@@ -62,6 +65,8 @@ else:
     if 'opt' in checkpoint:
         opt_old = checkpoint['opt']
         print(opt_old)
+
+wandb.watch(vae)
 
 
 def create_generator_input(x, train):
@@ -89,7 +94,7 @@ def train_batch(x, G_inp, step, train=True):
         trainer_vae.zero_grad()
         loss.backward()
         trainer_vae.step()
-    return rec_loss.item(), kld.item()
+    return rec_loss.item(), kld.item(), loss.item()
 
 
 # def load_model_from_checkpoint():
@@ -108,29 +113,43 @@ def training():
         vae.train()
         train_rec_loss = []
         train_kl_loss = []
+        train_overall_loss = []
         for batch in train_iter:
             x = get_cuda(batch.text) 	                                #Used as encoder input as well as target output for generator
             G_inp = create_generator_input(x, train=True)
-            rec_loss, kl_loss = train_batch(x, G_inp, step, train=True)
+            rec_loss, kl_loss, overall_loss = train_batch(x, G_inp, step, train=True)
             train_rec_loss.append(rec_loss)
             train_kl_loss.append(kl_loss)
+            train_overall_loss.append(overall_loss)
             step += 1
 
         vae.eval()
         valid_rec_loss = []
         valid_kl_loss = []
+        valid_overall_loss = []
         for batch in val_iter:
             x = get_cuda(batch.text)
             G_inp = create_generator_input(x, train=False)
             with T.autograd.no_grad():
-                rec_loss, kl_loss = train_batch(x, G_inp, step, train=False)
+                rec_loss, kl_loss, overall_loss = train_batch(x, G_inp, step, train=False)
             valid_rec_loss.append(rec_loss)
             valid_kl_loss.append(kl_loss)
+            valid_overall_loss.append(overall_loss)
 
         train_rec_loss = np.mean(train_rec_loss)
         train_kl_loss = np.mean(train_kl_loss)
         valid_rec_loss = np.mean(valid_rec_loss)
         valid_kl_loss = np.mean(valid_kl_loss)
+        train_overall_loss = np.mean(train_overall_loss)
+        valid_overall_loss = np.mean(valid_overall_loss)
+
+        wandb.log({"train_rec_loss": train_rec_loss,
+                    "train_kl_loss": train_kl_loss,
+                    "valid_rec_loss": valid_rec_loss,
+                    "valid_kl_loss": valid_kl_loss,
+                    "train_overall_loss": train_overall_loss,
+                    "valid_overall_loss": valid_overall_loss
+                    })
 
         print("No.", epoch, "T_rec:", '%.2f' % train_rec_loss, "T_kld:", '%.2f' % train_kl_loss, "V_rec:", '%.2f' % valid_rec_loss, "V_kld:", '%.2f' % valid_kl_loss)
         if epoch >= 50 and epoch % 10 == 0:

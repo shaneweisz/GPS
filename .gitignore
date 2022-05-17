@@ -183,3 +183,8 @@ ENV/
 *.exe
 *.out
 *.app
+
+# Weights And Biases: wandb
+wandb
+
+.vscode
