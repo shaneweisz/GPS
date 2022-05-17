@@ -78,8 +78,8 @@ CMD="$application $options"
 #! Choose this for a MPI code using OpenMPI:
 #CMD="mpirun -npernode $mpi_tasks_per_node -np $np $application $options"
 source .venv/bin/activate
-python VAE_Text_Generation.py --dataset CONAN --training
-# python VAE_Text_Generation.py --dataset CONAN --resume_training
+python VAE_Text_Generation.py --dataset conan --training
+# python VAE_Text_Generation.py --dataset conan --resume_training
 
 
 ###############################################################
