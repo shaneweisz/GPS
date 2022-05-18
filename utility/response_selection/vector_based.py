@@ -10,12 +10,13 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_hub
 import tensorflow_text  # NOQA: required for PolyAI encoders.
+import tf_slim as slim
 # import tf_sentencepiece  # NOQA: it is used when importing USE_QA.
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
-import bert.run_classifier
-import bert.tokenization
+# import bert.run_classifier
+# import bert.tokenization
 from utility.response_selection import method
 
 
@@ -59,13 +60,13 @@ class TfHubEncoder(Encoder):
     """
     def __init__(self, uri):
         """Create a new `TfHubEncoder` object."""
-        self._session = tf.Session(graph=tf.Graph())
+        self._session = tf.compat.v1.Session(graph=tf.Graph())
         with self._session.graph.as_default():
             glog.info("Loading %s model from tensorflow hub", uri)
             embed_fn = tensorflow_hub.Module(uri)
-            self._fed_texts = tf.placeholder(shape=[None], dtype=tf.string)
+            self._fed_texts = tf.compat.v1.placeholder(shape=[None], dtype=tf.string)
             self._context_embeddings = embed_fn(self._fed_texts)
-            init_ops = (tf.global_variables_initializer(), tf.tables_initializer())
+            init_ops = (tf.compat.v1.global_variables_initializer(), tf.compat.v1.tables_initializer())
         glog.info("Initializing graph.")
         self._session.run(init_ops)
 
@@ -82,7 +83,7 @@ class USEDualEncoder(Encoder):
     """
     def __init__(self, uri):
         """Create a new `USEDualEncoder` object."""
-        self._session = tf.Session(graph=tf.Graph())
+        self._session = tf.compat.v1.Session(graph=tf.Graph())
         with self._session.graph.as_default():
             glog.info("Loading %s model from tensorflow hub", uri)
             embed_fn = tensorflow_hub.Module(uri)
@@ -124,7 +125,7 @@ class ConveRTEncoder(Encoder):
     """
     def __init__(self, uri):
         """Create a new `ConveRTEncoder` object."""
-        self._session = tf.Session(graph=tf.Graph())
+        self._session = tf.compat.v1.Session(graph=tf.Graph())
         with self._session.graph.as_default():
             glog.info("Loading %s model from tensorflow hub", uri)
             embed_fn = tensorflow_hub.Module(uri)
@@ -165,7 +166,7 @@ class BERTEncoder(Encoder):
             glog.warning(
                 "No GPU detected, BERT will run a lot slower than with a GPU.")
 
-        self._session = tf.Session(graph=tf.Graph())
+        self._session = tf.compat.v1.Session(graph=tf.Graph())
         with self._session.graph.as_default():
             glog.info("Loading %s model from tensorflow hub", uri)
             embed_fn = tensorflow_hub.Module(uri, trainable=False)
@@ -205,7 +206,7 @@ class BERTEncoder(Encoder):
             bert_module = tensorflow_hub.Module(uri, trainable=False)
             tokenization_info = bert_module(
                 signature="tokenization_info", as_dict=True)
-            with tf.Session() as sess:
+            with tf.compat.v1.Session() as sess:
                 vocab_file, do_lower_case = sess.run(
                     [
                         tokenization_info["vocab_file"],
@@ -327,11 +328,11 @@ class VectorMappingMethod(method.BaselineMethod):
 
     def _build_mapping_graph(self, contexts_train, contexts_dev, responses_train, responses_dev):
         """Build the graph that applies a learned mapping to the vectors."""
-        self._session = tf.Session(graph=tf.Graph())
+        self._session = tf.compat.v1.Session(graph=tf.Graph())
         with self._session.graph.as_default():
 
             def read_batch(contexts, responses, batch_size):
-                dataset = tf.data.Dataset.from_tensor_slices((contexts, responses))
+                dataset = tf.compat.v1.data.Dataset.from_tensor_slices((contexts, responses))
                 dataset = dataset.shuffle(batch_size * 8)
                 dataset = dataset.batch(batch_size)
                 return dataset.make_initializable_iterator()
@@ -343,13 +344,13 @@ class VectorMappingMethod(method.BaselineMethod):
             (contexts_batch_dev, responses_batch_dev) = self._dev_iterator.get_next()
 
             # Create the train op.
-            self._regularizer = tf.placeholder(dtype=tf.float32, shape=None)
+            self._regularizer = tf.compat.v1.placeholder(dtype=tf.float32, shape=None)
             self._create_train_op(self._compute_similarities(contexts_batch_train, responses_batch_train, is_train=True))
 
             # Create the accuracy eval metric.
             dev_batch_size = tf.shape(contexts_batch_dev)[0]
             similarities = self._compute_similarities(contexts_batch_dev, responses_batch_dev, is_train=False)
-            self._accuracy = tf.metrics.accuracy(labels=tf.range(dev_batch_size), predictions=tf.argmax(similarities, 1))
+            self._accuracy = tf.compat.v1.metrics.accuracy(labels=tf.range(dev_batch_size), predictions=tf.argmax(similarities, 1))
 
             # Create the inference graph.
             encoding_dim = int(contexts_batch_train.shape[1])
@@ -357,29 +358,29 @@ class VectorMappingMethod(method.BaselineMethod):
             self._fed_response_encodings = tf.placeholder(dtype=tf.float32, shape=[None, encoding_dim])
             self._similarities = self._compute_similarities(self._fed_context_encodings, self._fed_response_encodings)
 
-            self._local_init_op = tf.local_variables_initializer()
-            self._reset_op = tf.global_variables_initializer()
-            self._saver = tf.train.Saver(max_to_keep=1)
+            self._local_init_op = tf.compat.v1.local_variables_initializer()
+            self._reset_op = tf.compat.v1.global_variables_initializer()
+            self._saver = tf.compat.v1.train.Saver(max_to_keep=1)
 
     def _compute_similarities(self, context_encodings, response_encodings, is_train=False):
         """Compute the similarities between context and responses.
 
         Uses a learned mapping on the response side.
         """
-        with tf.variable_scope("compute_similarities", reuse=(not is_train)):
+        with tf.compat.v1.variable_scope("compute_similarities", reuse=(not is_train)):
             # Normalise the vectors so that the model is not dependent on
             # vector scaling.
             context_encodings = tf.nn.l2_normalize(context_encodings, 1)
             response_encodings = tf.nn.l2_normalize(response_encodings, 1)
             encoding_dim = int(context_encodings.shape[1])
-            mapping_weights = tf.get_variable(
+            mapping_weights = tf.compat.v1.get_variable(
                 "mapping_weights",
                 dtype=tf.float32,
                 shape=[encoding_dim, encoding_dim],
-                initializer=tf.orthogonal_initializer(),
-                regularizer=tf.contrib.layers.l2_regularizer(self._regularizer),
+                initializer=tf.compat.v1.orthogonal_initializer(),
+                regularizer=slim.l2_regularizer(self._regularizer),
             )
-            residual_weight = tf.get_variable(
+            residual_weight = tf.compat.v1.get_variable(
                 "residual_weight",
                 dtype=tf.float32,
                 shape=[],
@@ -394,16 +395,16 @@ class VectorMappingMethod(method.BaselineMethod):
     def _create_train_op(self, similarities):
         """Create the train op."""
         train_batch_size = tf.shape(similarities)[0]
-        tf.losses.softmax_cross_entropy(
+        tf.compat.v1.losses.softmax_cross_entropy(
             onehot_labels=tf.one_hot(tf.range(train_batch_size), train_batch_size),
             label_smoothing=0.2,
             logits=similarities,
-            reduction=tf.losses.Reduction.MEAN
+            reduction=tf.compat.v1.losses.Reduction.MEAN
         )
-        self._learning_rate = tf.placeholder(dtype=tf.float32, shape=None)
+        self._learning_rate = tf.compat.v1.placeholder(dtype=tf.float32, shape=None)
         self._train_op = tf.contrib.training.create_train_op(
-            total_loss=tf.losses.get_total_loss(),
-            optimizer=tf.train.AdagradOptimizer(learning_rate=self._learning_rate)
+            total_loss=tf.compat.v1.losses.get_total_loss(),
+            optimizer=tf.compat.v1.train.AdagradOptimizer(learning_rate=self._learning_rate)
         )
 
     def _grid_search(self):
