@@ -83,6 +83,7 @@ def convert_to_contexts_responses(train_x_text, train_y_text):
     responses_train = []
     for i in zip(train_x_text, train_y_text):
         contexts_train.append(i[0].strip())
+        # For gab / reddit, pick a random one of the CS responses. For conan, it's deterministic.
         responses_train.append(i[1][random.randint(0, len(i[1])-1)].strip())
     return contexts_train, responses_train
 
