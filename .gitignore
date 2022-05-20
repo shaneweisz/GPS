@@ -183,6 +183,7 @@ ENV/
 *.exe
 *.out
 *.app
+*.err
 
 # Weights And Biases: wandb
 wandb

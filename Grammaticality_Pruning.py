@@ -5,24 +5,24 @@ import wandb
 
 def main(args):
     wandb.init(project="gps-pruning", entity="shaneweisz")
-    config = wandb.config
-    config.dataset = args.dataset
 
-    print('Load generated candidates from Module 1...')
-    candidates = read_candidates('./data/' + args.dataset + '_candidates.txt')
+    print(f'Reading candidates from {args.candidates_fname}')
+    candidates = read_candidates(args.candidates_fname)
+    print(f'Before filtering by LQ, there are {len(candidates)} candidates.')
 
-    print('Extract good candidates by LQ...')
     candidates = extract_good_candidates_by_LQ(candidates, LQ_thres=0.52, num_of_generation=30000)
     print(f'After filtering by LQ, there are {len(candidates)} candidates.')
 
     print('Writing pruned candidates to file...')
-    with open('./data/' + args.dataset + '_candidates_pruned.txt', 'w') as f:
+    pruned_candidates_fname = args.candidates_fname.replace('.txt', '_pruned.txt')
+    with open(pruned_candidates_fname, 'w') as f:
         for c in candidates:
             f.write(c + '\n')
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog='Main.py', description='choose dataset from reddit, gab, conan')
-    parser.add_argument('--dataset', type=str, default='reddit', choices=['reddit', 'gab', 'conan'])
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--candidates_fname', type=str, help='candidates file name', required=True)
     args = parser.parse_args()
+    assert args.candidates_fname.endswith('.txt')
     main(args)
